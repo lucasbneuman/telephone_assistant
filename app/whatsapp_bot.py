@@ -118,16 +118,30 @@ def whatsapp_webhook():
                     temp_audio_path = temp_audio.name
 
                 try:
-                    # Convertir voz a texto
-                    voice_handler = VoiceHandler()
-                    success, text = voice_handler.speech_to_text_from_file(temp_audio_path)
+                    # Convertir voz a texto usando OpenAI Whisper (mejor para audios de WhatsApp)
+                    from openai import OpenAI
+                    client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
-                    if success:
-                        incoming_msg = text
-                        logger.info(f"Audio transcrito: {text}")
-                    else:
+                    logger.info(f"Transcribiendo audio con Whisper. Tamaño: {os.path.getsize(temp_audio_path)} bytes")
+
+                    with open(temp_audio_path, 'rb') as audio_file:
+                        transcription = client.audio.transcriptions.create(
+                            model="whisper-1",
+                            file=audio_file,
+                            language="es"
+                        )
+
+                    incoming_msg = transcription.text
+                    logger.info(f"✅ Audio transcrito con Whisper: {incoming_msg}")
+
+                    if not incoming_msg or len(incoming_msg.strip()) == 0:
                         resp.message("❌ No pude entender el audio. Por favor, intenta de nuevo o escribe tu mensaje.")
                         return Response(str(resp), mimetype='application/xml')
+
+                except Exception as e:
+                    logger.error(f"Error transcribiendo audio con Whisper: {e}", exc_info=True)
+                    resp.message(f"❌ Error procesando audio: {str(e)[:100]}. Por favor, escribe tu mensaje.")
+                    return Response(str(resp), mimetype='application/xml')
 
                 finally:
                     # Limpiar archivo temporal
