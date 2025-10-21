@@ -4,7 +4,12 @@ Este módulo gestiona la conversión de voz a texto y texto a voz.
 """
 
 import speech_recognition as sr
-import pyttsx3
+try:
+    import pyttsx3
+    PYTTSX3_AVAILABLE = True
+except ImportError:
+    PYTTSX3_AVAILABLE = False
+    pyttsx3 = None
 from gtts import gTTS
 import os
 import tempfile
@@ -32,14 +37,19 @@ class VoiceHandler:
 
         # Inicializar motor TTS
         if tts_engine == "pyttsx3":
-            try:
-                self.tts_engine = pyttsx3.init()
-                self._configurar_pyttsx3()
-            except Exception as e:
-                logger.error(f"Error inicializando pyttsx3: {e}")
-                logger.info("Cambiando a gTTS como respaldo")
+            if not PYTTSX3_AVAILABLE:
+                logger.warning("pyttsx3 no está disponible. Usando gTTS como respaldo")
                 self.tts_engine_type = "gtts"
                 self.tts_engine = None
+            else:
+                try:
+                    self.tts_engine = pyttsx3.init()
+                    self._configurar_pyttsx3()
+                except Exception as e:
+                    logger.error(f"Error inicializando pyttsx3: {e}")
+                    logger.info("Cambiando a gTTS como respaldo")
+                    self.tts_engine_type = "gtts"
+                    self.tts_engine = None
         else:
             self.tts_engine = None
 
