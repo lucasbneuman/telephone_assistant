@@ -5,8 +5,9 @@ Permite recibir mensajes de voz y texto por WhatsApp y responder con el asistent
 
 import os
 import logging
-from flask import Flask, request, Response
+from flask import Flask, request, Response, session
 from twilio.twiml.messaging_response import MessagingResponse
+from twilio.twiml.voice_response import VoiceResponse, Gather
 from twilio.rest import Client
 from dotenv import load_dotenv
 import tempfile
@@ -22,14 +23,17 @@ logger = logging.getLogger(__name__)
 
 # Configuración de Flask
 app = Flask(__name__)
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Configuración de Twilio
 TWILIO_ACCOUNT_SID = os.getenv('TWILIO_ACCOUNT_SID')
 TWILIO_AUTH_TOKEN = os.getenv('TWILIO_AUTH_TOKEN')
 TWILIO_WHATSAPP_NUMBER = os.getenv('TWILIO_WHATSAPP_NUMBER', 'whatsapp:+14155238886')
+TWILIO_PHONE_NUMBER = os.getenv('TWILIO_PHONE_NUMBER')
 
-# Diccionario para mantener sesiones de usuarios
+# Diccionarios para mantener sesiones de usuarios
 user_sessions = {}
+call_sessions = {}
 
 
 def get_or_create_session(phone_number: str) -> AIAssistant:
@@ -54,6 +58,30 @@ def clear_session(phone_number: str):
     if phone_number in user_sessions:
         del user_sessions[phone_number]
         logger.info(f"Sesión eliminada para {phone_number}")
+
+
+def get_or_create_call_session(call_sid: str) -> AIAssistant:
+    """
+    Obtiene o crea una sesión de asistente para una llamada telefónica.
+
+    Args:
+        call_sid: SID de la llamada de Twilio
+
+    Returns:
+        Instancia de AIAssistant
+    """
+    if call_sid not in call_sessions:
+        call_sessions[call_sid] = AIAssistant()
+        logger.info(f"Nueva sesión de llamada creada para {call_sid}")
+
+    return call_sessions[call_sid]
+
+
+def clear_call_session(call_sid: str):
+    """Limpia la sesión de una llamada."""
+    if call_sid in call_sessions:
+        del call_sessions[call_sid]
+        logger.info(f"Sesión de llamada eliminada para {call_sid}")
 
 
 @app.route('/webhook/whatsapp', methods=['POST'])
@@ -161,6 +189,148 @@ Puedo ayudarte con:
         return Response(str(resp), mimetype='application/xml')
 
 
+@app.route('/webhook/voice', methods=['POST'])
+def voice_webhook():
+    """
+    Webhook para recibir llamadas telefónicas desde Twilio.
+    Este es el punto de entrada cuando alguien llama.
+    """
+    try:
+        call_sid = request.values.get('CallSid')
+        from_number = request.values.get('From', '')
+
+        logger.info(f"Llamada recibida de {from_number}, CallSid: {call_sid}")
+
+        # Crear respuesta de voz
+        resp = VoiceResponse()
+
+        # Obtener o crear sesión para esta llamada
+        assistant = get_or_create_call_session(call_sid)
+
+        # Saludo inicial
+        saludo = assistant.obtener_saludo_inicial()
+
+        # Usar Gather para capturar la respuesta del usuario
+        gather = Gather(
+            input='speech',
+            language='es-MX',
+            timeout=5,
+            speech_timeout='auto',
+            action='/webhook/voice/gather',
+            method='POST'
+        )
+
+        gather.say(saludo, language='es-MX', voice='Polly.Mia')
+        resp.append(gather)
+
+        # Si no hay respuesta, repetir
+        resp.say("¿Sigue ahí? Por favor, dígame en qué puedo ayudarle.", language='es-MX', voice='Polly.Mia')
+        resp.redirect('/webhook/voice/gather')
+
+        return Response(str(resp), mimetype='application/xml')
+
+    except Exception as e:
+        logger.error(f"Error en webhook de voz: {e}", exc_info=True)
+        resp = VoiceResponse()
+        resp.say("Lo siento, ocurrió un error. Por favor, intente más tarde.", language='es-MX')
+        resp.hangup()
+        return Response(str(resp), mimetype='application/xml')
+
+
+@app.route('/webhook/voice/gather', methods=['POST'])
+def voice_gather():
+    """
+    Procesa la respuesta del usuario durante la llamada.
+    """
+    try:
+        call_sid = request.values.get('CallSid')
+        speech_result = request.values.get('SpeechResult', '')
+
+        logger.info(f"Respuesta de llamada {call_sid}: {speech_result}")
+
+        # Crear respuesta de voz
+        resp = VoiceResponse()
+
+        # Obtener sesión de la llamada
+        assistant = get_or_create_call_session(call_sid)
+
+        # Si no hay respuesta del usuario
+        if not speech_result:
+            resp.say("No pude escucharlo. ¿Puede repetir por favor?", language='es-MX', voice='Polly.Mia')
+            gather = Gather(
+                input='speech',
+                language='es-MX',
+                timeout=5,
+                speech_timeout='auto',
+                action='/webhook/voice/gather',
+                method='POST'
+            )
+            resp.append(gather)
+            return Response(str(resp), mimetype='application/xml')
+
+        # Verificar si el usuario quiere terminar
+        despedidas = ['adiós', 'adios', 'chau', 'hasta luego', 'colgar', 'terminar', 'nada más']
+        if any(palabra in speech_result.lower() for palabra in despedidas):
+            resp.say("Perfecto, que tenga un buen día. Hasta luego.", language='es-MX', voice='Polly.Mia')
+            resp.hangup()
+            clear_call_session(call_sid)
+            return Response(str(resp), mimetype='application/xml')
+
+        # Procesar mensaje con el asistente
+        response_text = assistant.procesar_mensaje(speech_result)
+
+        # Responder al usuario
+        gather = Gather(
+            input='speech',
+            language='es-MX',
+            timeout=5,
+            speech_timeout='auto',
+            action='/webhook/voice/gather',
+            method='POST'
+        )
+
+        gather.say(response_text, language='es-MX', voice='Polly.Mia')
+        resp.append(gather)
+
+        # Si no hay más respuesta, despedirse
+        resp.say("¿Hay algo más en lo que pueda ayudarle?", language='es-MX', voice='Polly.Mia')
+        resp.redirect('/webhook/voice/gather')
+
+        logger.info(f"Respuesta enviada en llamada {call_sid}: {response_text[:50]}...")
+
+        return Response(str(resp), mimetype='application/xml')
+
+    except Exception as e:
+        logger.error(f"Error procesando gather de voz: {e}", exc_info=True)
+        resp = VoiceResponse()
+        resp.say("Lo siento, ocurrió un error. Por favor, intente más tarde.", language='es-MX')
+        resp.hangup()
+        return Response(str(resp), mimetype='application/xml')
+
+
+@app.route('/webhook/voice/status', methods=['POST'])
+def voice_status():
+    """
+    Callback para el estado de la llamada.
+    Se llama cuando la llamada termina.
+    """
+    try:
+        call_sid = request.values.get('CallSid')
+        call_status = request.values.get('CallStatus')
+
+        logger.info(f"Estado de llamada {call_sid}: {call_status}")
+
+        # Si la llamada terminó, limpiar la sesión
+        if call_status in ['completed', 'failed', 'busy', 'no-answer', 'canceled']:
+            clear_call_session(call_sid)
+
+        return Response('OK', mimetype='text/plain')
+
+    except Exception as e:
+        logger.error(f"Error en status callback: {e}", exc_info=True)
+        return Response('ERROR', mimetype='text/plain')
+
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Endpoint para verificar que el servicio está funcionando."""
@@ -174,25 +344,50 @@ def index():
     <html>
         <head><title>Asistente Telefónico - Clínica San Rafael</title></head>
         <body style="font-family: Arial; padding: 40px; background: #f5f5f5;">
-            <div style="max-width: 600px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-                <h1 style="color: #2c3e50;">🏥 Asistente Telefónico</h1>
+            <div style="max-width: 700px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                <h1 style="color: #2c3e50;">🏥 Asistente Telefónico con IA</h1>
                 <h2 style="color: #3498db;">Clínica San Rafael</h2>
                 <p style="color: #555; line-height: 1.6;">
-                    Bot de WhatsApp para atención automatizada de pacientes.
+                    Sistema de atención automatizada multicanal para pacientes.
                 </p>
-                <h3 style="color: #2c3e50;">📱 Cómo usar:</h3>
-                <ol style="color: #555; line-height: 1.8;">
+
+                <h3 style="color: #2c3e50;">📞 Llamadas Telefónicas</h3>
+                <p style="color: #555; line-height: 1.6;">
+                    Llama y habla directamente con nuestro asistente de IA:
+                </p>
+                <ul style="color: #555; line-height: 1.8;">
+                    <li><strong>Reconocimiento de voz</strong> en español en tiempo real</li>
+                    <li><strong>Respuestas conversacionales</strong> naturales</li>
+                    <li><strong>Gestión de turnos</strong> por teléfono</li>
+                    <li>Disponible <strong>24/7</strong></li>
+                </ul>
+
+                <h3 style="color: #2c3e50;">📱 WhatsApp</h3>
+                <p style="color: #555; line-height: 1.6;">
+                    Envía mensajes de texto o notas de voz:
+                </p>
+                <ul style="color: #555; line-height: 1.8;">
                     <li>Envía un mensaje de WhatsApp al número configurado</li>
                     <li>Puedes enviar texto o notas de voz</li>
                     <li>El asistente te responderá automáticamente</li>
-                </ol>
-                <h3 style="color: #2c3e50;">✨ Funciones:</h3>
-                <ul style="color: #555; line-height: 1.8;">
-                    <li>Gestión de turnos médicos</li>
-                    <li>Consultas sobre especialidades</li>
-                    <li>Verificación de coberturas</li>
-                    <li>Respuestas a preguntas frecuentes</li>
                 </ul>
+
+                <h3 style="color: #2c3e50;">✨ Funcionalidades:</h3>
+                <ul style="color: #555; line-height: 1.8;">
+                    <li>📅 Gestión de turnos médicos</li>
+                    <li>🏥 Consultas sobre especialidades</li>
+                    <li>💳 Verificación de coberturas médicas</li>
+                    <li>📍 Información de la clínica</li>
+                    <li>❓ Respuestas a preguntas frecuentes</li>
+                </ul>
+
+                <h3 style="color: #2c3e50;">🔌 Endpoints API:</h3>
+                <ul style="color: #555; line-height: 1.8; font-family: monospace; font-size: 14px;">
+                    <li><strong>POST</strong> /webhook/voice - Llamadas entrantes</li>
+                    <li><strong>POST</strong> /webhook/whatsapp - Mensajes WhatsApp</li>
+                    <li><strong>GET</strong> /health - Health check</li>
+                </ul>
+
                 <div style="margin-top: 30px; padding: 15px; background: #ecf0f1; border-radius: 5px;">
                     <p style="margin: 0; color: #555;">
                         <strong>Estado:</strong> <span style="color: #27ae60;">✓ Servicio activo</span>
