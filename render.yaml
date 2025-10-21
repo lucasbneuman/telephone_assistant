@@ -2,16 +2,22 @@ services:
   - type: web
     name: asistente-telefonico
     env: python
+    region: oregon
+    plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app.whatsapp_bot:app
+    startCommand: gunicorn app.whatsapp_bot:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
     envVars:
       - key: PYTHON_VERSION
-        value: 3.12.1
+        value: 3.13.4
       - key: OPENAI_API_KEY
         sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
       - key: TWILIO_ACCOUNT_SID
         sync: false
       - key: TWILIO_AUTH_TOKEN
         sync: false
       - key: TWILIO_WHATSAPP_NUMBER
         sync: false
+      - key: SECRET_KEY
+        generateValue: true

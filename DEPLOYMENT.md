@@ -188,27 +188,28 @@ Completar los campos:
 En la sección **Environment**, agregar una por una:
 
 ```bash
-# OpenAI
+# OpenAI (REQUERIDO)
 OPENAI_API_KEY=sk-proj-tu-key-aqui-completa
 OPENAI_MODEL=gpt-4o-mini
 
-# Twilio
+# Twilio (REQUERIDO)
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxx
 TWILIO_AUTH_TOKEN=tu-auth-token-aqui
 TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886
-TWILIO_PHONE_NUMBER=+1234567890
 
-# Flask
+# Flask (REQUERIDO)
 SECRET_KEY=genera-una-clave-random-segura-aqui
 
-# Puerto (Render lo asigna automáticamente)
-PORT=10000
+# Twilio Phone (OPCIONAL - solo si usarás llamadas)
+TWILIO_PHONE_NUMBER=+1234567890
 ```
 
 **⚠️ IMPORTANTE:**
+- **NO configures la variable `PORT`** - Render la asigna automáticamente
 - No dejes espacios antes o después del `=`
 - Las keys son sensibles a mayúsculas/minúsculas
 - No uses comillas alrededor de los valores
+- `TWILIO_PHONE_NUMBER` es opcional, solo si vas a usar llamadas telefónicas
 
 ### Paso 5: Deploy Inicial
 

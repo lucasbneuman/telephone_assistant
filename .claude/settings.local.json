@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(./venv/Scripts/python.exe -c \"print(''=== TEST FINAL ===''); from app.ai_assistant import AIAssistant; from app.voice_handler import VoiceHandler; from app.call_manager import CallManager; print(''✓ Todos los módulos importados correctamente''); print(''✓ Sistema 100% operativo''); print(''✓ Listo para usar'')\")",
-      "Bash(./venv/Scripts/python.exe -c \"print(''=== TEST FINAL ===''); from app.ai_assistant import AIAssistant; from app.voice_handler import VoiceHandler; from app.call_manager import CallManager; print(''OK - Todos los modulos importados''); print(''OK - Sistema 100 por ciento operativo''); print(''OK - Listo para usar'')\")"
+      "Bash(./venv/Scripts/python.exe -c \"print(''=== TEST FINAL ===''); from app.ai_assistant import AIAssistant; from app.voice_handler import VoiceHandler; from app.call_manager import CallManager; print(''OK - Todos los modulos importados''); print(''OK - Sistema 100 por ciento operativo''); print(''OK - Listo para usar'')\")",
+      "Bash(zip -r ../telephone_assistant_backup.zip . -x \"venv/*\" -x \".git/*\" -x \"__pycache__/*\" -x \"*.pyc\" -x \".env\")",
+      "Bash(git remote remove origin)",
+      "Bash(git remote add origin https://github.com/lucasbneuman/telephone_assistant.git)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

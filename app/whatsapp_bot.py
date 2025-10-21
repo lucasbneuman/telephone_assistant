@@ -401,7 +401,8 @@ def index():
 
 def run_server(host='0.0.0.0', port=5000, debug=False):
     """
-    Inicia el servidor Flask.
+    Inicia el servidor Flask (solo para desarrollo local).
+    En producción, usar gunicorn directamente.
 
     Args:
         host: Host donde escuchar
@@ -412,12 +413,16 @@ def run_server(host='0.0.0.0', port=5000, debug=False):
     app.run(host=host, port=port, debug=debug)
 
 
+# Configurar logging para producción
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+
 if __name__ == '__main__':
-    # Configurar logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
+    # Este bloque solo se ejecuta en desarrollo local con: python -m app.whatsapp_bot
+    # En producción con gunicorn, esto NO se ejecuta
 
     # Verificar configuración de Twilio
     if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
